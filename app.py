@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,10 +10,10 @@ from scipy.stats import chi2_contingency, f_oneway
 import statsmodels.formula.api as smf
 import io
 
-st.set_page_config(page_title="Survey Analyzer (Upgraded)", layout="wide")
-st.title("Advanced Evaluation Study Analysis App")
+st.set_page_config(page_title="All-in-One Survey Analyzer", layout="wide")
+st.title("Final All-in-One Survey Analysis Platform")
 
-uploaded_file = st.file_uploader("Upload Excel or CSV", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader("Upload Excel or CSV file", type=["csv", "xlsx"])
 
 def detect_type(series):
     try:
@@ -32,103 +33,116 @@ def detect_type(series):
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith("csv") else pd.read_excel(uploaded_file)
+
     st.subheader("Raw Data")
     st.dataframe(df.head())
 
-    st.markdown("## X–Y Chart Explorer (with Chart Mode Option)")
+    column_types = {col: detect_type(df[col]) for col in df.columns}
 
-    x_col = st.selectbox("X variable", df.columns)
-    y_col = st.selectbox("Y variable", [c for c in df.columns if c != x_col])
+    st.markdown("## Multi-Chart Dashboard Per Column")
+    for col in df.columns:
+        try:
+            col_type = column_types[col]
+            st.markdown(f"### {col} ({col_type})")
+            if col_type == "Categorical":
+                counts = df[col].value_counts().reset_index()
+                counts.columns = [col, "Count"]
+                st.plotly_chart(px.bar(counts, x=col, y="Count", color=col, title=f"Bar Chart - {col}"))
+                st.plotly_chart(px.pie(counts, names=col, values="Count", title=f"Pie Chart - {col}"))
+            elif col_type == "Numeric":
+                st.plotly_chart(px.histogram(df, x=col, nbins=20, title=f"Histogram - {col}"))
+                st.plotly_chart(px.box(df, y=col, title=f"Boxplot - {col}"))
+            elif col_type == "Datetime":
+                for num_col in df.select_dtypes(include=np.number).columns:
+                    fig = px.line(df.sort_values(by=col), x=col, y=num_col, title=f"{num_col} over {col}")
+                    st.plotly_chart(fig)
+            elif col_type == "Text":
+                text = " ".join(df[col].dropna().astype(str))
+                if len(text.split()) > 10:
+                    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
+                    fig, ax = plt.subplots()
+                    ax.imshow(wordcloud, interpolation='bilinear')
+                    ax.axis("off")
+                    st.pyplot(fig)
+                else:
+                    st.info("Not enough text for word cloud.")
+        except Exception as e:
+            st.warning(f"Could not chart {col}: {str(e)}")
 
-    x_type = detect_type(df[x_col])
-    y_type = detect_type(df[y_col])
-    chart_mode = st.radio("Chart Type", ["Interactive (Plotly)", "Static (PNG)"])
+    st.markdown("## X–Y Chart Explorer with Smart Filtering")
+    x_options = [c for c, t in column_types.items() if t in ["Numeric", "Categorical", "Datetime"]]
+    x_col = st.selectbox("Select X variable", x_options)
+    x_type = column_types[x_col]
 
-    cleaned_df = df[[x_col, y_col]].dropna()
+    if x_type == "Numeric":
+        y_options = [c for c in df.columns if c != x_col and column_types[c] == "Numeric"]
+    elif x_type in ["Categorical", "Datetime"]:
+        y_options = [c for c in df.columns if c != x_col and column_types[c] == "Numeric"]
+    else:
+        y_options = []
+
+    y_col = st.selectbox("Select Y variable", y_options)
+    chart_mode = st.radio("Chart Mode", ["Interactive", "Static"])
 
     try:
-        if x_type == "Numeric" and y_type == "Numeric":
-            if chart_mode == "Interactive (Plotly)":
-                fig = px.scatter(cleaned_df, x=x_col, y=y_col, title=f"Scatter: {x_col} vs {y_col}")
-                st.plotly_chart(fig)
-            else:
-                fig, ax = plt.subplots()
-                sns.scatterplot(data=cleaned_df, x=x_col, y=y_col, ax=ax)
-                ax.set_title(f"Scatter: {x_col} vs {y_col}")
-                buf = io.BytesIO()
-                fig.savefig(buf, format="png")
-                st.pyplot(fig)
-                st.download_button("Download Chart", buf.getvalue(), f"{x_col}_vs_{y_col}_scatter.png", "image/png")
-
-        elif x_type == "Categorical" and y_type == "Numeric":
-            if chart_mode == "Interactive (Plotly)":
-                fig = px.box(cleaned_df, x=x_col, y=y_col, title=f"Boxplot: {y_col} by {x_col}")
-                st.plotly_chart(fig)
-            else:
-                fig, ax = plt.subplots()
-                sns.boxplot(data=cleaned_df, x=x_col, y=y_col, ax=ax)
-                ax.set_title(f"Boxplot: {y_col} by {x_col}")
-                buf = io.BytesIO()
-                fig.savefig(buf, format="png")
-                st.pyplot(fig)
-                st.download_button("Download Chart", buf.getvalue(), f"{y_col}_by_{x_col}_boxplot.png", "image/png")
-
-        elif x_type == "Datetime" and y_type == "Numeric":
-            cleaned_df = cleaned_df.sort_values(by=x_col)
-            if chart_mode == "Interactive (Plotly)":
-                fig = px.line(cleaned_df, x=x_col, y=y_col, title=f"Line: {y_col} over {x_col}")
-                st.plotly_chart(fig)
-            else:
-                fig, ax = plt.subplots()
-                ax.plot(cleaned_df[x_col], cleaned_df[y_col])
-                ax.set_title(f"Line: {y_col} over {x_col}")
-                buf = io.BytesIO()
-                fig.savefig(buf, format="png")
-                st.pyplot(fig)
-                st.download_button("Download Chart", buf.getvalue(), f"{y_col}_over_{x_col}_line.png", "image/png")
-
+        df_chart = df[[x_col, y_col]].dropna()
+        if chart_mode == "Interactive":
+            if x_type == "Numeric" and column_types[y_col] == "Numeric":
+                st.plotly_chart(px.scatter(df_chart, x=x_col, y=y_col, title=f"{x_col} vs {y_col}"))
+            elif x_type == "Categorical":
+                st.plotly_chart(px.box(df_chart, x=x_col, y=y_col, title=f"{y_col} by {x_col}"))
+            elif x_type == "Datetime":
+                df_chart = df_chart.sort_values(x_col)
+                st.plotly_chart(px.line(df_chart, x=x_col, y=y_col, title=f"{y_col} over {x_col}"))
         else:
-            st.warning("Unsupported variable types for this chart.")
+            fig, ax = plt.subplots()
+            if x_type == "Numeric":
+                sns.scatterplot(data=df_chart, x=x_col, y=y_col, ax=ax)
+            elif x_type == "Categorical":
+                sns.boxplot(data=df_chart, x=x_col, y=y_col, ax=ax)
+            elif x_type == "Datetime":
+                ax.plot(df_chart[x_col], df_chart[y_col])
+            ax.set_title(f"{y_col} vs {x_col}")
+            st.pyplot(fig)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png")
+            st.download_button("Download Chart", buf.getvalue(), f"{y_col}_vs_{x_col}.png", "image/png")
     except Exception as e:
-        st.error(f"Chart error: {str(e)}")
+        st.warning(f"Chart rendering issue: {e}")
 
-    st.markdown("## Statistical Testing with Interpretation")
-
+    st.markdown("## Statistical Tests with Auto-Clean & Interpret")
     dep = st.selectbox("Dependent Variable", df.columns)
-    indep = st.selectbox("Independent Variable", [c for c in df.columns if c != dep])
+    dep_type = column_types[dep]
+    if dep_type == "Numeric":
+        indep_options = [c for c in df.columns if c != dep and column_types[c] in ["Categorical", "Numeric"]]
+    elif dep_type == "Categorical":
+        indep_options = [c for c in df.columns if c != dep and column_types[c] == "Categorical"]
+    else:
+        indep_options = []
 
-    dep_type = detect_type(df[dep])
-    indep_type = detect_type(df[indep])
+    indep = st.selectbox("Independent Variable", indep_options)
+    indep_type = column_types[indep]
 
-    test_data = df[[dep, indep]].dropna()
-
-    if st.button("Run Statistical Test"):
+    df_test = df[[dep, indep]].dropna()
+    if st.button("Run Test"):
         try:
-            if len(test_data) < 10:
-                st.warning("Not enough data for reliable testing (minimum 10 rows).")
-            else:
-                if dep_type == "Categorical" and indep_type == "Categorical":
-                    table = pd.crosstab(test_data[dep], test_data[indep])
-                    chi2, p, _, _ = chi2_contingency(table)
-                    st.write(f"Chi-square p-value: {p:.4f}")
-                    st.success("Significant relationship." if p < 0.05 else "No significant relationship.")
-
-                elif dep_type == "Numeric" and indep_type == "Categorical":
-                    groups = [group[dep] for _, group in test_data.groupby(indep)]
-                    f_stat, p_val = f_oneway(*groups)
-                    st.write(f"ANOVA p-value: {p_val:.4f}")
-                    st.success("Significant difference." if p_val < 0.05 else "No significant difference.")
-
-                elif dep_type == "Numeric" and indep_type == "Numeric":
-                    model = smf.ols(f"{dep} ~ {indep}", data=test_data).fit()
-                    st.text(model.summary())
-                    p_val = model.pvalues[1]
-                    r2 = model.rsquared
-                    if p_val < 0.05:
-                        st.success(f"Significant linear relationship (R² = {r2:.2f})")
-                    else:
-                        st.info(f"No significant relationship (R² = {r2:.2f})")
-                else:
-                    st.warning("Unsupported variable types for statistical test.")
+            if dep_type == "Categorical" and indep_type == "Categorical":
+                table = pd.crosstab(df_test[dep], df_test[indep])
+                chi2, p, _, _ = chi2_contingency(table)
+                st.write(f"Chi-square p = {p:.4f}")
+                st.success("Significant!" if p < 0.05 else "Not significant.")
+            elif dep_type == "Numeric" and indep_type == "Categorical":
+                groups = [group[dep] for _, group in df_test.groupby(indep)]
+                f_stat, p_val = f_oneway(*groups)
+                st.write(f"ANOVA p = {p_val:.4f}")
+                st.success("Significant difference!" if p_val < 0.05 else "No significant difference.")
+            elif dep_type == "Numeric" and indep_type == "Numeric":
+                model = smf.ols(f"{dep} ~ {indep}", data=df_test).fit()
+                st.text(model.summary())
+                st.success(f"Significant (R² = {model.rsquared:.2f})" if model.pvalues[1] < 0.05 else f"Not significant (R² = {model.rsquared:.2f})")
         except Exception as e:
-            st.error(f"Test error: {str(e)}")
+            st.error(f"Test error: {e}")
+
+    st.markdown("## Export Tools")
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button("Download Data as CSV", csv, "survey_data.csv", "text/csv")
