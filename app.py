@@ -86,23 +86,24 @@ if uploaded_file:
         st.warning("No compatible Y variables found. Try another X.")
     else:
         y_col = st.selectbox("Y Variable", y_options)
+        chart_type = st.selectbox("Chart Type", ["Scatter", "Line", "Box"])
         df_chart = df[[x_col, y_col]].dropna()
         try:
             if chart_mode == "Interactive":
-                if x_type == "Numeric":
+                if chart_type == "Scatter":
                     st.plotly_chart(px.scatter(df_chart, x=x_col, y=y_col))
-                elif x_type == "Categorical":
-                    st.plotly_chart(px.box(df_chart, x=x_col, y=y_col))
-                elif x_type == "Datetime":
+                elif chart_type == "Line":
                     st.plotly_chart(px.line(df_chart.sort_values(x_col), x=x_col, y=y_col))
+                elif chart_type == "Box":
+                    st.plotly_chart(px.box(df_chart, x=x_col, y=y_col))
             else:
                 fig, ax = plt.subplots()
-                if x_type == "Numeric":
+                if chart_type == "Scatter":
                     sns.scatterplot(data=df_chart, x=x_col, y=y_col, ax=ax)
-                elif x_type == "Categorical":
-                    sns.boxplot(data=df_chart, x=x_col, y=y_col, ax=ax)
-                elif x_type == "Datetime":
+                elif chart_type == "Line":
                     ax.plot(df_chart[x_col], df_chart[y_col])
+                elif chart_type == "Box":
+                    sns.boxplot(data=df_chart, x=x_col, y=y_col, ax=ax)
                 st.pyplot(fig)
         except Exception as e:
             st.warning(f"Rendering failed: {e}")
@@ -114,23 +115,70 @@ if uploaded_file:
     if cat_cols and num_cols:
         group_col = st.selectbox("Group by", cat_cols, key="group")
         value_col = st.selectbox("Compare numeric", num_cols, key="value")
+        group_chart = st.selectbox("Group Chart Type", ["Box", "Violin", "Bar"])
         stats = df.groupby(group_col)[value_col].agg(['count', 'mean', 'std', 'min', 'max'])
         st.dataframe(stats)
 
         if chart_mode == "Interactive":
-            st.plotly_chart(px.box(df, x=group_col, y=value_col, title=f"{value_col} by {group_col}"))
+            if group_chart == "Box":
+                st.plotly_chart(px.box(df, x=group_col, y=value_col))
+            elif group_chart == "Violin":
+                st.plotly_chart(px.violin(df, x=group_col, y=value_col, box=True, points="all"))
+            elif group_chart == "Bar":
+                bar_df = df.groupby(group_col)[value_col].mean().reset_index()
+                st.plotly_chart(px.bar(bar_df, x=group_col, y=value_col))
         else:
             fig, ax = plt.subplots()
-            sns.boxplot(data=df, x=group_col, y=value_col, ax=ax)
+            if group_chart == "Box":
+                sns.boxplot(data=df, x=group_col, y=value_col, ax=ax)
+            elif group_chart == "Violin":
+                sns.violinplot(data=df, x=group_col, y=value_col, ax=ax)
+            elif group_chart == "Bar":
+                bar_df = df.groupby(group_col)[value_col].mean().reset_index()
+                sns.barplot(data=bar_df, x=group_col, y=value_col, ax=ax)
             ax.set_title(f"{value_col} by {group_col}")
             st.pyplot(fig)
 
-    st.markdown("## Correlation Matrix with Interpretation")
-    if len(num_cols) >= 2:
-        corr = df[num_cols].corr()
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-        st.pyplot(fig)
+    st.markdown("## Regression, ANOVA, and Chi-Square Tests")
+    dep = st.selectbox("Dependent Variable", df.columns)
+    dep_type = column_types[dep]
+    if dep_type == "Numeric":
+        indep_options = [col for col in df.columns if col != dep and column_types[col] in ["Numeric", "Categorical"]]
+    elif dep_type == "Categorical":
+        indep_options = [col for col in df.columns if col != dep and column_types[col] == "Categorical"]
+    else:
+        indep_options = []
+
+    if indep_options:
+        indep = st.selectbox("Independent Variable", indep_options)
+        st.info("Chi-square (cat–cat), ANOVA (num–cat), or Regression (num–num)")
+        df_test = df[[dep, indep]].dropna()
+
+        if st.button("Run Test"):
+            try:
+                if len(df_test) < 10:
+                    st.warning("Too few rows.")
+                else:
+                    if dep_type == "Categorical" and column_types[indep] == "Categorical":
+                        table = pd.crosstab(df_test[dep], df_test[indep])
+                        chi2, p, _, _ = chi2_contingency(table)
+                        st.write(f"Chi-square p = {p:.4f}")
+                        st.success("Significant" if p < 0.05 else "Not significant")
+                    elif dep_type == "Numeric" and column_types[indep] == "Categorical":
+                        groups = [g[dep] for _, g in df_test.groupby(indep)]
+                        f_stat, p_val = f_oneway(*groups)
+                        st.write(f"ANOVA p = {p_val:.4f}")
+                        st.success("Significant" if p_val < 0.05 else "Not significant")
+                    elif dep_type == "Numeric" and column_types[indep] == "Numeric":
+                        safe_dep = f'Q("{dep}")'
+                        safe_indep = f'Q("{indep}")'
+                        model = smf.ols(f"{safe_dep} ~ {safe_indep}", data=df_test).fit()
+                        st.text(model.summary())
+                        st.success(f"Significant (R² = {model.rsquared:.2f})" if model.pvalues[1] < 0.05 else f"Not significant (R² = {model.rsquared:.2f})")
+            except Exception as e:
+                st.error(f"Test error: {e}")
+    else:
+        st.warning("No valid independent variable found.")
 
     st.markdown("## Word Cloud Generator")
     text_cols = [col for col in df.columns if column_types[col] in ["Text", "Categorical"]]
@@ -148,43 +196,13 @@ if uploaded_file:
     else:
         st.warning("No valid text column found.")
 
-    st.markdown("## Statistical Test Builder")
-    dep = st.selectbox("Dependent Variable", df.columns)
-    dep_type = column_types[dep]
-    if dep_type == "Numeric":
-        indep_options = [col for col in df.columns if col != dep and column_types[col] in ["Numeric", "Categorical"]]
-    elif dep_type == "Categorical":
-        indep_options = [col for col in df.columns if col != dep and column_types[col] == "Categorical"]
-    else:
-        indep_options = []
-
-    if indep_options:
-        indep = st.selectbox("Independent Variable", indep_options)
-        st.info("Chi-square (cat–cat), ANOVA (num–cat), or Regression (num–num)")
-        df_test = df[[dep, indep]].dropna()
-        if st.button("Run Test"):
-            try:
-                if len(df_test) < 10:
-                    st.warning("Too few rows.")
-                else:
-                    if dep_type == "Categorical" and column_types[indep] == "Categorical":
-                        table = pd.crosstab(df_test[dep], df_test[indep])
-                        chi2, p, _, _ = chi2_contingency(table)
-                        st.write(f"Chi-square p = {p:.4f}")
-                        st.success("Significant" if p < 0.05 else "Not significant")
-                    elif dep_type == "Numeric" and column_types[indep] == "Categorical":
-                        groups = [g[dep] for _, g in df_test.groupby(indep)]
-                        f_stat, p_val = f_oneway(*groups)
-                        st.write(f"ANOVA p = {p_val:.4f}")
-                        st.success("Significant" if p_val < 0.05 else "Not significant")
-                    elif dep_type == "Numeric" and column_types[indep] == "Numeric":
-                        model = smf.ols(f"{dep} ~ {indep}", data=df_test).fit()
-                        st.text(model.summary())
-                        st.success(f"Significant (R²={model.rsquared:.2f})" if model.pvalues[1] < 0.05 else f"Not significant (R²={model.rsquared:.2f})")
-            except Exception as e:
-                st.error(f"Test error: {e}")
-    else:
-        st.warning("No valid independent variable found.")
+    st.markdown("## Correlation Matrix with Interpretation")
+    num_cols = [col for col in df.columns if column_types[col] == "Numeric"]
+    if len(num_cols) >= 2:
+        corr = df[num_cols].corr()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+        st.pyplot(fig)
 
     st.markdown("## Export Tools")
     csv = df.to_csv(index=False).encode("utf-8")
