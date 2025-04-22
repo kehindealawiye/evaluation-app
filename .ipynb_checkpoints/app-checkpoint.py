@@ -11,7 +11,7 @@ from wordcloud import WordCloud
 import io
 
 st.set_page_config(page_title="Complete Survey Analysis Tool", layout="wide")
-st.title("Survey Analysis Dashboard – Final Complete Version")
+st.title("Survey Analysis Dashboard – A Complete Survey Analysis Tool")
 
 uploaded_file = st.file_uploader("Upload Excel or CSV", type=["csv", "xlsx"])
 
