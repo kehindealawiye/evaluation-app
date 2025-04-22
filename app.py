@@ -23,9 +23,10 @@ def detect_type(series):
         if pd.api.types.is_numeric_dtype(series):
             return "Numeric"
         elif pd.api.types.is_string_dtype(series):
-            if series.nunique() < 10:
+            unique_vals = series.nunique()
+            if unique_vals < 10:
                 return "Categorical"
-            elif series.nunique() < 30:
+            elif unique_vals < 30:
                 return "Categorical"
             else:
                 return "Text"
@@ -34,26 +35,30 @@ def detect_type(series):
 if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith("csv") else pd.read_excel(uploaded_file)
 
-    st.subheader("Raw Data Preview")
-    st.dataframe(df.head())
-
+    # Type detection
     column_types = {col: detect_type(df[col]) for col in df.columns}
-    chart_mode = st.radio("Display mode for charts:", ["Interactive", "Static"], horizontal=True)
 
-    st.markdown("## Multi-Chart Dashboard Per Column")
+    # Show variable summary
+    st.markdown("## Detected Variable Types")
+    var_df = pd.DataFrame.from_dict(column_types, orient="index", columns=["Type"])
+    st.dataframe(var_df)
+
+    chart_mode = st.radio("Chart display mode", ["Interactive", "Static"], horizontal=True)
+
+    st.markdown("## Multi-Chart Dashboard")
     for col in df.columns:
         col_type = column_types[col]
         st.markdown(f"### {col} ({col_type})")
         try:
             if col_type == "Categorical":
-                data = df[col].value_counts().reset_index()
-                data.columns = [col, "Count"]
+                counts = df[col].value_counts().reset_index()
+                counts.columns = [col, "Count"]
                 if chart_mode == "Interactive":
-                    st.plotly_chart(px.bar(data, x=col, y="Count", color=col))
-                    st.plotly_chart(px.pie(data, names=col, values="Count"))
+                    st.plotly_chart(px.bar(counts, x=col, y="Count", color=col))
+                    st.plotly_chart(px.pie(counts, names=col, values="Count"))
                 else:
                     fig, ax = plt.subplots()
-                    sns.barplot(data=data, x=col, y="Count", ax=ax)
+                    sns.barplot(data=counts, x=col, y="Count", ax=ax)
                     st.pyplot(fig)
 
             elif col_type == "Numeric":
@@ -81,7 +86,7 @@ if uploaded_file:
         except Exception as e:
             st.warning(f"Chart error: {e}")
 
-    st.markdown("## X–Y Variable Chart Explorer")
+    st.markdown("## X–Y Chart Explorer")
     x_options = [col for col in df.columns if column_types[col] in ["Numeric", "Categorical", "Datetime"]]
     x_col = st.selectbox("X Variable", x_options)
     x_type = column_types[x_col]
@@ -94,7 +99,7 @@ if uploaded_file:
         y_options = []
 
     if not y_options:
-        st.warning("No compatible Y variables found for the selected X.")
+        st.warning("No compatible Y variables found. Try selecting a different X (e.g., 'price', 'revenue').")
     else:
         y_col = st.selectbox("Y Variable", y_options)
         df_chart = df[[x_col, y_col]].dropna()
@@ -118,46 +123,21 @@ if uploaded_file:
         except Exception as e:
             st.warning(f"Rendering failed: {e}")
 
-    st.markdown("## Descriptive Statistics")
-    num_cols = df.select_dtypes(include=np.number).columns
-    if not num_cols.empty:
-        st.dataframe(df[num_cols].describe().T)
-
-    st.markdown("## Group Comparison Tool")
-    cat_cols = [col for col in df.columns if column_types[col] == "Categorical"]
-    if cat_cols and not num_cols.empty:
-        cat_col = st.selectbox("Grouping Variable", cat_cols)
-        num_col = st.selectbox("Numeric Variable", num_cols)
-        group_stats = df.groupby(cat_col)[num_col].agg(['count', 'mean', 'std', 'min', 'max'])
-        st.dataframe(group_stats)
-        st.plotly_chart(px.box(df, x=cat_col, y=num_col, title=f"{num_col} by {cat_col}"))
-
-    st.markdown("## Correlation Matrix with Interpretation")
-    if len(num_cols) >= 2:
-        corr = df[num_cols].corr()
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-        st.pyplot(fig)
-        high_corr = [(i, j, corr.loc[i, j]) for i in corr.columns for j in corr.columns
-                     if i != j and abs(corr.loc[i, j]) >= 0.5]
-        if high_corr:
-            st.markdown("**Strong Correlations (>|0.5|):**")
-            for i, j, val in high_corr:
-                st.write(f"- {i} and {j}: {'positive' if val > 0 else 'negative'} correlation (r = {val:.2f})")
-        else:
-            st.info("No strong correlations found.")
-
-    st.markdown("## Statistical Tests with Smart Filtering")
+    st.markdown("## Statistical Test Preview and Execution")
     dep = st.selectbox("Dependent Variable", df.columns)
     dep_type = column_types[dep]
 
+    test_hint = ""
     if dep_type == "Numeric":
-        indep_options = [col for col in df.columns if col != dep and column_types[col] in ["Numeric", "Categorical"]]
+        indep_options = [col for col in df.columns if col != dep and column_types[col] in ["Categorical", "Numeric"]]
+        test_hint = "Test options: ANOVA (if group is categorical), Regression (if numeric)"
     elif dep_type == "Categorical":
         indep_options = [col for col in df.columns if col != dep and column_types[col] == "Categorical"]
+        test_hint = "Test option: Chi-square (cat–cat)"
     else:
         indep_options = []
 
+    st.info(test_hint)
     if indep_options:
         indep = st.selectbox("Independent Variable", indep_options)
         df_test = df[[dep, indep]].dropna()
@@ -186,6 +166,18 @@ if uploaded_file:
     else:
         st.warning("No compatible independent variables available.")
 
+    st.markdown("## Descriptive Statistics")
+    num_cols = df.select_dtypes(include=np.number).columns
+    if not num_cols.empty:
+        st.dataframe(df[num_cols].describe().T)
+
+    st.markdown("## Correlation Matrix")
+    if len(num_cols) >= 2:
+        corr = df[num_cols].corr()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+        st.pyplot(fig)
+
     st.markdown("## Export")
     csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button("Download Full Dataset (CSV)", csv, "survey_data.csv", "text/csv")
+    st.download_button("Download Dataset (CSV)", csv, "survey_data.csv", "text/csv")
