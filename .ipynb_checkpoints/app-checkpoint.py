@@ -146,7 +146,7 @@ if uploaded_file:
             st.pyplot(fig)
                 st.markdown('**Chart Data Table:**')
                 st.dataframe(df_chart if 'df_chart' in locals() else df)
-
+            
     st.markdown("## Regression, ANOVA, and Chi-Square Tests")
     dep = st.selectbox("Dependent Variable", df.columns)
     dep_type = column_types[dep]
