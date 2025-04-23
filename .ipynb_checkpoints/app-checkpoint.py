@@ -56,7 +56,8 @@ if uploaded_file:
                 else:
                     fig, ax = plt.subplots()
                     sns.barplot(data=counts, x=col, y="Count", ax=ax)
-                    st.pyplot(fig)
+                    ax.tick_params(axis='x', labelrotation=45)
+                st.pyplot(fig)
                 st.markdown('**Chart Data Table:**')
                 st.dataframe(df_chart if 'df_chart' in locals() else df)
             elif col_type == "Numeric":
@@ -69,7 +70,8 @@ if uploaded_file:
                     axs[0].set_title("Histogram")
                     sns.boxplot(y=df[col], ax=axs[1])
                     axs[1].set_title("Boxplot")
-                    st.pyplot(fig)
+                    ax.tick_params(axis='x', labelrotation=45)
+                st.pyplot(fig)
                 st.markdown('**Chart Data Table:**')
                 st.dataframe(df_chart if 'df_chart' in locals() else df)
         except Exception as e:
@@ -108,6 +110,7 @@ if uploaded_file:
                     ax.plot(df_chart[x_col], df_chart[y_col])
                 elif chart_type == "Box":
                     sns.boxplot(data=df_chart, x=x_col, y=y_col, ax=ax)
+                ax.tick_params(axis='x', labelrotation=45)
                 st.pyplot(fig)
                 st.markdown('**Chart Data Table:**')
                 st.dataframe(df_chart if 'df_chart' in locals() else df)
@@ -143,10 +146,11 @@ if uploaded_file:
                 bar_df = df.groupby(group_col)[value_col].mean().reset_index()
                 sns.barplot(data=bar_df, x=group_col, y=value_col, ax=ax)
             ax.set_title(f"{value_col} by {group_col}")
-            st.pyplot(fig)
-            st.markdown('**Chart Data Table:**')
-            st.dataframe(df_chart if 'df_chart' in locals() else df)
-            
+            ax.tick_params(axis='x', labelrotation=45)
+                st.pyplot(fig)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(df_chart if 'df_chart' in locals() else df)
+
     st.markdown("## Regression, ANOVA, and Chi-Square Tests")
     dep = st.selectbox("Dependent Variable", df.columns)
     dep_type = column_types[dep]
@@ -161,3 +165,63 @@ if uploaded_file:
         indep = st.selectbox("Independent Variable", indep_options)
         st.info("Chi-square (cat–cat), ANOVA (num–cat), or Regression (num–num)")
         df_test = df[[dep, indep]].dropna()
+
+        if st.button("Run Test"):
+            try:
+                if len(df_test) < 10:
+                    st.warning("Too few rows.")
+                else:
+                    if dep_type == "Categorical" and column_types[indep] == "Categorical":
+                        table = pd.crosstab(df_test[dep], df_test[indep])
+                        chi2, p, _, _ = chi2_contingency(table)
+                        st.write(f"Chi-square p = {p:.4f}")
+                        st.success("Significant" if p < 0.05 else "Not significant")
+                    elif dep_type == "Numeric" and column_types[indep] == "Categorical":
+                        groups = [g[dep] for _, g in df_test.groupby(indep)]
+                        f_stat, p_val = f_oneway(*groups)
+                        st.write(f"ANOVA p = {p_val:.4f}")
+                        st.success("Significant" if p_val < 0.05 else "Not significant")
+                    elif dep_type == "Numeric" and column_types[indep] == "Numeric":
+                        safe_dep = f'Q("{dep}")'
+                        safe_indep = f'Q("{indep}")'
+                        model = smf.ols(f"{safe_dep} ~ {safe_indep}", data=df_test).fit()
+                        st.text(model.summary())
+                        st.success(f"Significant (R² = {model.rsquared:.2f})" if model.pvalues[1] < 0.05 else f"Not significant (R² = {model.rsquared:.2f})")
+            except Exception as e:
+                st.error(f"Test error: {e}")
+    else:
+        st.warning("No valid independent variable found.")
+
+    st.markdown("## Word Cloud Generator")
+    text_cols = [col for col in df.columns if column_types[col] in ["Text", "Categorical"]]
+    if text_cols:
+        word_col = st.selectbox("Column for Word Cloud", text_cols)
+        text = " ".join(df[word_col].dropna().astype(str))
+        if len(text.split()) > 3:
+            wc = WordCloud(width=800, height=400).generate(text)
+            fig, ax = plt.subplots()
+            ax.imshow(wc, interpolation="bilinear")
+            ax.axis("off")
+            ax.tick_params(axis='x', labelrotation=45)
+                st.pyplot(fig)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(df_chart if 'df_chart' in locals() else df)
+        else:
+            st.info("Not enough text for Word Cloud.")
+    else:
+        st.warning("No valid text column found.")
+
+    st.markdown("## Correlation Matrix with Interpretation")
+    num_cols = [col for col in df.columns if column_types[col] == "Numeric"]
+    if len(num_cols) >= 2:
+        corr = df[num_cols].corr()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+        ax.tick_params(axis='x', labelrotation=45)
+                st.pyplot(fig)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(df_chart if 'df_chart' in locals() else df)
+
+    st.markdown("## Export Tools")
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button("Download Dataset", csv, "survey_data.csv", "text/csv")
