@@ -203,9 +203,9 @@ if uploaded_file:
             ax.imshow(wc, interpolation="bilinear")
             ax.axis("off")
             ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+            st.pyplot(fig)
+            st.markdown('**Chart Data Table:**')
+            st.dataframe(df_chart if 'df_chart' in locals() else df)
         else:
             st.info("Not enough text for Word Cloud.")
     else:
