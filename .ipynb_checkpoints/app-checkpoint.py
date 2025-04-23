@@ -51,8 +51,13 @@ if uploaded_file:
                 counts = df[col].value_counts().reset_index()
                 counts.columns = [col, "Count"]
                 if chart_mode == "Interactive":
-                    st.plotly_chart(px.bar(counts, x=col, y="Count", color=col))
-                    st.plotly_chart(px.pie(counts, names=col, values="Count"))
+                    fig_bar = px.bar(counts, x=col, y="Count", color=col)
+                fig_bar.update_layout(xaxis_tickangle=45)
+                st.plotly_chart(fig_bar)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(counts)
+                    fig_pie = px.pie(counts, names=col, values="Count")
+                st.plotly_chart(fig_pie)
                 else:
                     fig, ax = plt.subplots()
                     sns.barplot(data=counts, x=col, y="Count", ax=ax)
@@ -62,8 +67,15 @@ if uploaded_file:
                 st.dataframe(df_chart if 'df_chart' in locals() else df)
             elif col_type == "Numeric":
                 if chart_mode == "Interactive":
-                    st.plotly_chart(px.histogram(df, x=col))
-                    st.plotly_chart(px.box(df, y=col))
+                    fig_hist = px.histogram(df, x=col)
+                fig_hist.update_layout(xaxis_tickangle=45)
+                st.plotly_chart(fig_hist)
+                st.markdown('**Chart Data Table (first 10 rows):**')
+                st.dataframe(df[[col]].dropna().head(10))
+                    fig_box = px.box(df, y=col)
+                st.plotly_chart(fig_box)
+                st.markdown('**Chart Summary Table:**')
+                st.dataframe(df[[col]].describe().T)
                 else:
                     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
                     sns.histplot(df[col], kde=True, ax=axs[0])
@@ -147,9 +159,9 @@ if uploaded_file:
                 sns.barplot(data=bar_df, x=group_col, y=value_col, ax=ax)
             ax.set_title(f"{value_col} by {group_col}")
             ax.tick_params(axis='x', labelrotation=45)
-            st.pyplot(fig)
-            st.markdown('**Chart Data Table:**')
-            st.dataframe(df_chart if 'df_chart' in locals() else df)
+                st.pyplot(fig)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(df_chart if 'df_chart' in locals() else df)
 
     st.markdown("## Regression, ANOVA, and Chi-Square Tests")
     dep = st.selectbox("Dependent Variable", df.columns)
@@ -203,9 +215,9 @@ if uploaded_file:
             ax.imshow(wc, interpolation="bilinear")
             ax.axis("off")
             ax.tick_params(axis='x', labelrotation=45)
-            st.pyplot(fig)
-            st.markdown('**Chart Data Table:**')
-            st.dataframe(df_chart if 'df_chart' in locals() else df)
+                st.pyplot(fig)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(df_chart if 'df_chart' in locals() else df)
         else:
             st.info("Not enough text for Word Cloud.")
     else:
@@ -218,10 +230,11 @@ if uploaded_file:
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
         ax.tick_params(axis='x', labelrotation=45)
-        st.pyplot(fig)
-        st.markdown('**Chart Data Table:**')
-        st.dataframe(df_chart if 'df_chart' in locals() else df)
+                st.pyplot(fig)
+                st.markdown('**Chart Data Table:**')
+                st.dataframe(df_chart if 'df_chart' in locals() else df)
 
     st.markdown("## Export Tools")
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("Download Dataset", csv, "survey_data.csv", "text/csv")
+
