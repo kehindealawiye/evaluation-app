@@ -56,7 +56,7 @@ if uploaded_file:
                 st.plotly_chart(fig_bar)
                 st.markdown('**Chart Data Table:**')
                 st.dataframe(counts)
-                    fig_pie = px.pie(counts, names=col, values="Count")
+                fig_pie = px.pie(counts, names=col, values="Count")
                 st.plotly_chart(fig_pie)
                 else:
                     fig, ax = plt.subplots()
@@ -72,7 +72,7 @@ if uploaded_file:
                 st.plotly_chart(fig_hist)
                 st.markdown('**Chart Data Table (first 10 rows):**')
                 st.dataframe(df[[col]].dropna().head(10))
-                    fig_box = px.box(df, y=col)
+                fig_box = px.box(df, y=col)
                 st.plotly_chart(fig_box)
                 st.markdown('**Chart Summary Table:**')
                 st.dataframe(df[[col]].describe().T)
