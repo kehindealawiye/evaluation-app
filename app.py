@@ -147,9 +147,9 @@ if uploaded_file:
                 sns.barplot(data=bar_df, x=group_col, y=value_col, ax=ax)
             ax.set_title(f"{value_col} by {group_col}")
             ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+            st.pyplot(fig)
+            st.markdown('**Chart Data Table:**')
+            st.dataframe(df_chart if 'df_chart' in locals() else df)
 
     st.markdown("## Regression, ANOVA, and Chi-Square Tests")
     dep = st.selectbox("Dependent Variable", df.columns)
