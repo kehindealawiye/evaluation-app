@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -25,9 +24,7 @@ def detect_type(series):
     except:
         pass
     if pd.api.types.is_string_dtype(series):
-        if series.nunique() < 10:
-            return "Categorical"
-        elif series.nunique() < 30:
+        if series.nunique() < 30:
             return "Categorical"
         else:
             return "Text"
@@ -35,8 +32,8 @@ def detect_type(series):
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith("csv") else pd.read_excel(uploaded_file)
-
     column_types = {col: detect_type(df[col]) for col in df.columns}
+
     st.markdown("### Detected Variable Types")
     st.dataframe(pd.DataFrame.from_dict(column_types, orient='index', columns=['Type']))
 
@@ -52,40 +49,41 @@ if uploaded_file:
                 counts.columns = [col, "Count"]
                 if chart_mode == "Interactive":
                     fig_bar = px.bar(counts, x=col, y="Count", color=col)
-                fig_bar.update_layout(xaxis_tickangle=45)
-                st.plotly_chart(fig_bar)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(counts)
-                fig_pie = px.pie(counts, names=col, values="Count")
-                st.plotly_chart(fig_pie)
+                    fig_bar.update_layout(xaxis_tickangle=45)
+                    st.plotly_chart(fig_bar)
+                    st.markdown('**Chart Data Table:**')
+                    st.dataframe(counts)
+                    fig_pie = px.pie(counts, names=col, values="Count")
+                    st.plotly_chart(fig_pie)
                 else:
                     fig, ax = plt.subplots()
                     sns.barplot(data=counts, x=col, y="Count", ax=ax)
                     ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+                    st.pyplot(fig)
+                    st.markdown('**Chart Data Table:**')
+                    st.dataframe(counts)
+
             elif col_type == "Numeric":
                 if chart_mode == "Interactive":
                     fig_hist = px.histogram(df, x=col)
-                fig_hist.update_layout(xaxis_tickangle=45)
-                st.plotly_chart(fig_hist)
-                st.markdown('**Chart Data Table (first 10 rows):**')
-                st.dataframe(df[[col]].dropna().head(10))
-                fig_box = px.box(df, y=col)
-                st.plotly_chart(fig_box)
-                st.markdown('**Chart Summary Table:**')
-                st.dataframe(df[[col]].describe().T)
+                    fig_hist.update_layout(xaxis_tickangle=45)
+                    st.plotly_chart(fig_hist)
+                    st.markdown('**Chart Data Table (first 10 rows):**')
+                    st.dataframe(df[[col]].dropna().head(10))
+                    fig_box = px.box(df, y=col)
+                    st.plotly_chart(fig_box)
+                    st.markdown('**Chart Summary Table:**')
+                    st.dataframe(df[[col]].describe().T)
                 else:
                     fig, axs = plt.subplots(1, 2, figsize=(10, 4))
                     sns.histplot(df[col], kde=True, ax=axs[0])
                     axs[0].set_title("Histogram")
                     sns.boxplot(y=df[col], ax=axs[1])
                     axs[1].set_title("Boxplot")
-                    ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+                    st.pyplot(fig)
+                    st.markdown('**Chart Summary Table:**')
+                    st.dataframe(df[[col]].describe().T)
+
         except Exception as e:
             st.warning(f"Chart error for {col}: {e}")
 
@@ -125,7 +123,7 @@ if uploaded_file:
                 ax.tick_params(axis='x', labelrotation=45)
                 st.pyplot(fig)
                 st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+                st.dataframe(df_chart)
         except Exception as e:
             st.warning(f"Rendering failed: {e}")
 
@@ -159,9 +157,7 @@ if uploaded_file:
                 sns.barplot(data=bar_df, x=group_col, y=value_col, ax=ax)
             ax.set_title(f"{value_col} by {group_col}")
             ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+            st.pyplot(fig)
 
     st.markdown("## Regression, ANOVA, and Chi-Square Tests")
     dep = st.selectbox("Dependent Variable", df.columns)
@@ -214,10 +210,7 @@ if uploaded_file:
             fig, ax = plt.subplots()
             ax.imshow(wc, interpolation="bilinear")
             ax.axis("off")
-            ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+            st.pyplot(fig)
         else:
             st.info("Not enough text for Word Cloud.")
     else:
