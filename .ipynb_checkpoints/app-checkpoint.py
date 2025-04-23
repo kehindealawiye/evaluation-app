@@ -218,9 +218,9 @@ if uploaded_file:
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
         ax.tick_params(axis='x', labelrotation=45)
-                st.pyplot(fig)
-                st.markdown('**Chart Data Table:**')
-                st.dataframe(df_chart if 'df_chart' in locals() else df)
+        st.pyplot(fig)
+        st.markdown('**Chart Data Table:**')
+        st.dataframe(df_chart if 'df_chart' in locals() else df)
 
     st.markdown("## Export Tools")
     csv = df.to_csv(index=False).encode("utf-8")
