@@ -231,10 +231,11 @@ if uploaded_file:
             st.markdown("## Pivot Summary Explorer")
 
         # User selects what to pivot
-        row_group = st.selectbox("Row Group (Index)", df.columns, key="pivot_row")
-        col_group = st.selectbox("Column Group (Optional)", ["None"] + list(df.columns), key="pivot_col")
-        value_cols = st.multiselect("Value(s) to Summarize", df.select_dtypes(include=np.number).columns, key="pivot_values")
+        row_group = st.multiselect("Row Group(s)", df.columns, key="pivot_row")
+        col_group = st.multiselect("Column Group(s)", df.columns, key="pivot_col")
+        value_cols = st.multiselect("Value Column(s)", df.select_dtypes(include=np.number).columns, key="pivot_values")
         agg_func = st.selectbox("Aggregation Function", ["mean", "sum", "count", "min", "max"], key="pivot_agg")
+
 
         # Optional filtering
         st.markdown("### Optional Filter")
