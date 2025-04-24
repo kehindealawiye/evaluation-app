@@ -227,6 +227,36 @@ if uploaded_file:
         st.markdown('**Chart Data Table:**')
         st.dataframe(df[num_cols].corr())
 
+    st.markdown("## Pivot Summary Explorer")
+
+# User selects what to pivot
+row_group = st.selectbox("Row Group (Index)", df.columns, key="pivot_row")
+col_group = st.selectbox("Column Group (Optional)", ["None"] + list(df.columns), key="pivot_col")
+value_cols = st.multiselect("Value(s) to Summarize", df.select_dtypes(include=np.number).columns, key="pivot_values")
+agg_func = st.selectbox("Aggregation Function", ["mean", "sum", "count", "min", "max"], key="pivot_agg")
+
+# Optional filtering
+st.markdown("### Optional Filter")
+filter_col = st.selectbox("Filter Column (Optional)", ["None"] + list(df.columns), key="pivot_filter_col")
+if filter_col != "None":
+    filter_vals = df[filter_col].dropna().unique()
+    selected_filter = st.multiselect("Filter Value(s)", filter_vals, key="pivot_filter_val")
+    if selected_filter:
+        df = df[df[filter_col].isin(selected_filter)]
+
+# Build and show pivot table
+if value_cols:
+    pivot_table = pd.pivot_table(
+        df,
+        index=row_group,
+        columns=None if col_group == "None" else col_group,
+        values=value_cols,
+        aggfunc=agg_func
+    )
+    st.dataframe(pivot_table)
+else:
+    st.info("Please select at least one numeric column to summarize.")
+    
     st.markdown("## Export Tools")
     csv = df.to_csv(index=False).encode("utf-8")
     st.download_button("Download Dataset", csv, "survey_data.csv", "text/csv")
