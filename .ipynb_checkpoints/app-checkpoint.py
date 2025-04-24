@@ -234,6 +234,9 @@ if uploaded_file:
     st.markdown("## Correlation Matrix with Interpretation")
     num_cols = [col for col in df.columns if column_types[col] == "Numeric"]
     if len(num_cols) >= 2:
+        df[num_cols]=
+    df[num_cols].apply(pd.to_numeric,
+    errors="coerce") # <- Add this
         corr = df[num_cols].corr()
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
