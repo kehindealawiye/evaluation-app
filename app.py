@@ -141,16 +141,17 @@ if uploaded_file:
             st.warning(f"Rendering failed: {e}")
 
     st.markdown("## Group Comparison Tool")
-    cat_cols = [col for col in df.columns if column_types[col] == "Categorical"]
-    num_cols = [col for col in df.columns if column_types[col] == "Numeric"]
 
-    if cat_cols and num_cols:
-        group_col = st.selectbox("Group by", cat_cols, key="group")
-        value_col = st.selectbox("Compare numeric", num_cols, key="value")
-        group_chart = st.selectbox("Group Chart Type", ["Box", "Violin", "Bar"])
-        df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
-	    stats = df.groupby(group_col)[value_col].agg(['count','mean','std','min','max'])
-        st.dataframe(stats)
+cat_cols = [col for col in df.columns if column_types[col] == "Categorical"]
+num_cols = [col for col in df.columns if column_types[col] == "Numeric"]
+
+if cat_cols and num_cols:
+    group_col = st.selectbox("Group by", cat_cols, key="group")
+    value_col = st.selectbox("Compare numeric", num_cols, key="value")
+    group_chart = st.selectbox("Group Chart Type", ["Box", "Violin", "Bar"])
+    df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
+    stats = df.groupby(group_col)[value_col].agg(['count', 'mean', 'std', 'min', 'max'])
+    st.dataframe(stats)
 
         if chart_mode == "Interactive":
             if group_chart == "Box":
