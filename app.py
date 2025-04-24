@@ -37,19 +37,19 @@ if uploaded_file:
     st.markdown("### Detected Variable Types")
     st.dataframe(pd.DataFrame.from_dict(column_types, orient='index', columns=['Type']))
 
-    # === Manual override for unknown types ===
-unknown_cols = [col for col, typ in column_types.items() if typ == "Unknown"]
-if unknown_cols:
-    st.markdown("### Manually Set Variable Types")
-    for col in unknown_cols:
-        new_type = st.selectbox(
-            f"Select type for *{col}*",
-            ["Numeric", "Categorical", "Text", "Datetime"],
-            key=f"override_type_{col}"
-        )
-        column_types[col] = new_type
-        
+       # === Manual override for unknown types ===
+    unknown_cols = [col for col, typ in column_types.items() if typ == "Unknown"]
+    if unknown_cols:
+        st.markdown("### Manually Set Variable Types")
+        for col in unknown_cols:
+            new_type = st.selectbox(
+                f"Select type for *{col}*",
+                ["Numeric", "Categorical", "Text", "Datetime"],
+                key=f"override_type_{col}"
+            )
+            column_types[col] = new_type
 
+        
     chart_mode = st.radio("Chart display mode", ["Interactive", "Static"], horizontal=True)
 
     st.markdown("## Multi-Chart Dashboard")
