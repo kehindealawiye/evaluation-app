@@ -228,7 +228,7 @@ if uploaded_file:
         st.dataframe(df[num_cols].corr())
 
         if 'df' in locals():
-        st.markdown("## Pivot Summary Explorer")
+            st.markdown("## Pivot Summary Explorer")
 
         # User selects what to pivot
         row_group = st.selectbox("Row Group (Index)", df.columns, key="pivot_row")
