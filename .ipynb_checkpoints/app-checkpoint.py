@@ -246,8 +246,8 @@ if uploaded_file:
     st.dataframe(corr)
 
 
-        if 'df' in locals():
-            st.markdown("## Pivot Summary Explorer")
+    if 'df' in locals():
+        st.markdown("## Pivot Summary Explorer")
 
         # User selects what to pivot
         row_group = st.multiselect("Row Group(s)", df.columns, key="pivot_row")
