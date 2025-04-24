@@ -148,7 +148,8 @@ if uploaded_file:
         group_col = st.selectbox("Group by", cat_cols, key="group")
         value_col = st.selectbox("Compare numeric", num_cols, key="value")
         group_chart = st.selectbox("Group Chart Type", ["Box", "Violin", "Bar"])
-        stats = df.groupby(group_col)[value_col].agg(['count', 'mean', 'std', 'min', 'max'])
+        df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
+    	stats = df.groupby(group_col)[value_col].agg(['count', 'mean', 'std', 'min', 'max'])
         st.dataframe(stats)
 
         if chart_mode == "Interactive":
