@@ -246,17 +246,22 @@ if uploaded_file:
                 df = df[df[filter_col].isin(selected_filter)]
 
         # Build and show pivot table
-        if value_cols:
-            pivot_table = pd.pivot_table(
-                df,
-                index=row_group,
-                columns=None if col_group == "None" else col_group,
-                values=value_cols,
-                aggfunc=agg_func
-            )
-            st.dataframe(pivot_table)
-        else:
-            st.info("Please select at least one numeric column to summarize.")
+    if value_cols:
+        pivot_table = pd.pivot_table(
+            df,
+            index=row_group,
+            columns=None if col_group == "None" else col_group,
+            values=value_cols,
+            aggfunc=agg_func
+        )
+
+        # Fix for JSON serialization: reset index and convert columns to string
+        pivot_table = pivot_table.reset_index()
+        pivot_table.columns = pivot_table.columns.map(str)
+
+        st.dataframe(pivot_table)
+    else:
+        st.info("Please select at least one numeric column to summarize.")
     
     st.markdown("## Export Tools")
     csv = df.to_csv(index=False).encode("utf-8")
