@@ -27,14 +27,33 @@ if uploaded_file:
     st.dataframe(df.head())
 
     st.markdown("## Step 1: Review & Confirm Column Types")
-    user_column_types = {}
-    type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
 
-    for col in df.columns:
-        inferred_type = "Numeric" if pd.api.types.is_numeric_dtype(df[col]) else (
-            "Text" if df[col].nunique() > 30 else "Categorical"
-        )
-        user_column_types[col] = st.selectbox(f"{col} - Detected: {inferred_type}", type_options, index=type_options.index(inferred_type))
+type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
+
+# Use session_state so selections persist properly
+if "column_types" not in st.session_state:
+    st.session_state["column_types"] = {}
+
+user_column_types = st.session_state["column_types"]
+
+for col in df.columns:
+    # Simple inference
+    if pd.api.types.is_numeric_dtype(df[col]):
+        inferred_type = "Numeric"
+    else:
+        inferred_type = "Text" if df[col].nunique(dropna=True) > 30 else "Categorical"
+
+    # If user has already chosen a type before, start from that, otherwise from inferred
+    default_type = user_column_types.get(col, inferred_type)
+
+    selected_type = st.selectbox(
+        f"{col} (detected: {inferred_type})",
+        type_options,
+        index=type_options.index(default_type),
+        key=f"col_type_{col}"  # explicit unique key per column
+    )
+
+    user_column_types[col] = selected_type
 
     st.markdown("## Step 2: Dashboard Insights")
 
