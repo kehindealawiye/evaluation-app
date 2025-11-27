@@ -28,6 +28,7 @@ def quote_col(col_name: str) -> str:
     # Statsmodels / patsy allow backtick-quoted names
     return f"`{col_name}`"
 
+
 def build_categorical_summary(df_cat: pd.DataFrame, cat_cols: list) -> dict:
     summaries = {}
     for col in cat_cols:
@@ -40,6 +41,7 @@ def build_categorical_summary(df_cat: pd.DataFrame, cat_cols: list) -> dict:
         freq_df["Percent"] = (freq_df["Count"] / total * 100).round(2)
         summaries[col] = freq_df
     return summaries
+
 
 def create_summary_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) -> BytesIO:
     buffer = BytesIO()
@@ -75,6 +77,7 @@ def create_summary_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list)
     buffer.seek(0)
     return buffer
 
+
 if uploaded_file is not None:
     # Load data
     filename = uploaded_file.name
@@ -83,41 +86,62 @@ if uploaded_file is not None:
     else:
         df = pd.read_excel(uploaded_file)
 
-    st.subheader("Data Preview")
+    st.subheader("Data preview")
     st.dataframe(df.head())
 
-    # Initialise or reset column type state when file changes
-    if "uploaded_filename" not in st.session_state or st.session_state["uploaded_filename"] != filename:
-        st.session_state["uploaded_filename"] = filename
-        st.session_state["column_types"] = {}
+    # Initialise or reset column type state when file changes or structure changes
+    cols = list(df.columns)
 
-    st.markdown("## Step 1: Review and Confirm Column Types")
+    if "uploaded_filename" not in st.session_state:
+        st.session_state["uploaded_filename"] = None
+    if "col_types" not in st.session_state:
+        st.session_state["col_types"] = []
+    if "col_names" not in st.session_state:
+        st.session_state["col_names"] = []
+
+    # If new file or different column structure, re-infer types
+    if (
+        st.session_state["uploaded_filename"] != filename
+        or len(st.session_state["col_names"]) != len(cols)
+        or list(st.session_state["col_names"]) != cols
+    ):
+        inferred_types = []
+        for col in cols:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                inferred_type = "Numeric"
+            else:
+                unique_vals = df[col].nunique(dropna=True)
+                inferred_type = "Text" if unique_vals > 30 else "Categorical"
+            inferred_types.append(inferred_type)
+
+        st.session_state["uploaded_filename"] = filename
+        st.session_state["col_names"] = cols
+        st.session_state["col_types"] = inferred_types
+
+    st.markdown("## Step 1: Review and confirm column types")
 
     type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
 
-    if "column_types" not in st.session_state:
-        st.session_state["column_types"] = {}
-
-    user_column_types = st.session_state["column_types"]
+    col_types = st.session_state["col_types"]
 
     # Column type selection with persistence
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            inferred_type = "Numeric"
-        else:
-            unique_vals = df[col].nunique(dropna=True)
-            inferred_type = "Text" if unique_vals > 30 else "Categorical"
-
-        default_type = user_column_types.get(col, inferred_type)
+    for i, col in enumerate(cols):
+        current_type = col_types[i]
+        # Ensure current_type is valid
+        if current_type not in type_options:
+            current_type = "Text"
 
         selected_type = st.selectbox(
-            f"{col} (detected: {inferred_type})",
+            f"{col} (detected: {current_type})",
             type_options,
-            index=type_options.index(default_type),
-            key=f"col_type_{col}"
+            index=type_options.index(current_type),
+            key=f"col_type_{i}"
         )
 
-        user_column_types[col] = selected_type
+        col_types[i] = selected_type
+
+    # Build a mapping from column name to selected type
+    user_column_types = {col: col_types[i] for i, col in enumerate(cols)}
 
     # Apply chosen types to a working copy of the dataframe
     df_typed = df.copy()
@@ -129,7 +153,7 @@ if uploaded_file is not None:
             df_typed[col] = df_typed[col].astype("category")
         # Text left as-is
 
-    st.markdown("## Step 2: Explore Your Data")
+    st.markdown("## Step 2: Explore your data")
 
     if len(df_typed.columns) == 0:
         st.info("No columns found in the uploaded file.")
@@ -141,10 +165,10 @@ if uploaded_file is not None:
         # Univariate explorer
         with tab_univariate:
             st.subheader("Univariate explorer")
-            selected_column = st.selectbox("Select a column to visualize", df_typed.columns)
+            selected_column = st.selectbox("Select a column to explore", df_typed.columns)
             col_type = user_column_types.get(selected_column, "Text")
 
-            if col_type == "Categorical":
+            if col_type == "Categorical" or col_type == "Ordinal":
                 value_counts = df_typed[selected_column].value_counts(dropna=False).reset_index()
                 value_counts.columns = [selected_column, "Count"]
                 value_counts["Percent"] = (value_counts["Count"] / value_counts["Count"].sum() * 100).round(2)
