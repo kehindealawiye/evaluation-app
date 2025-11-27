@@ -23,6 +23,7 @@ st.markdown(
 
 uploaded_file = st.file_uploader("Upload your Excel or CSV file", type=["csv", "xlsx"])
 
+
 # Helper for safe quoting of column names in regression formulas
 def quote_col(col_name: str) -> str:
     # Statsmodels / patsy allow backtick-quoted names
@@ -43,28 +44,63 @@ def build_categorical_summary(df_cat: pd.DataFrame, cat_cols: list) -> dict:
     return summaries
 
 
-def create_summary_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) -> BytesIO:
+def create_report_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) -> BytesIO:
+    """
+    Create an Excel report with:
+    - Numeric descriptive statistics (and a chart of means)
+    - Categorical/ordinal frequency tables (each with a bar chart)
+    - Correlation matrix (if available)
+    No raw row-level dataset is exported.
+    Charts are created with XlsxWriter on the summary tables.
+    """
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        # Raw typed data
-        df_typed.to_excel(writer, sheet_name="RawData", index=False)
+        workbook = writer.book
 
         # Numeric descriptive statistics
         if num_cols:
             desc = df_typed[num_cols].describe().T
-            desc.to_excel(writer, sheet_name="Numeric_Describe")
+            sheet_name = "Numeric_Describe"
+            desc.to_excel(writer, sheet_name=sheet_name)
+            numeric_ws = writer.sheets[sheet_name]
 
-        # Categorical frequencies
+            # Add a chart for the mean of each numeric variable
+            if "mean" in desc.columns:
+                chart = workbook.add_chart({"type": "column"})
+                n_rows = len(desc.index)
+
+                # desc is written starting at row 0, col 0 (index + columns)
+                # Categories (variable names) are in column 0, rows 1..n_rows
+                cat_first_row = 1
+                cat_last_row = n_rows
+                cat_col_idx = 0
+
+                mean_col_idx = list(desc.columns).index("mean") + 1  # +1 for index column
+
+                chart.add_series({
+                    "name": "Mean values",
+                    "categories": [sheet_name, cat_first_row, cat_col_idx, cat_last_row, cat_col_idx],
+                    "values": [sheet_name, cat_first_row, mean_col_idx, cat_last_row, mean_col_idx],
+                })
+                chart.set_title({"name": "Mean of numeric variables"})
+                chart.set_x_axis({"name": "Variable"})
+                chart.set_y_axis({"name": "Mean"})
+
+                # Insert chart below the table
+                numeric_ws.insert_chart(cat_last_row + 3, 0, chart)
+
+        # Categorical frequencies with charts
         if cat_cols:
             cat_summaries = build_categorical_summary(df_typed, cat_cols)
-            start_row = 0
             sheet_name = "Categorical_Frequencies"
-            workbook = writer.book
-            worksheet = workbook.add_worksheet(sheet_name)
-            writer.sheets[sheet_name] = worksheet
+            cat_ws = workbook.add_worksheet(sheet_name)
+            writer.sheets[sheet_name] = cat_ws
 
+            start_row = 0
             for col, freq_df in cat_summaries.items():
-                worksheet.write(start_row, 0, col)
+                # Write column title
+                cat_ws.write(start_row, 0, col)
+                # Write table just below
                 freq_df.to_excel(
                     writer,
                     sheet_name=sheet_name,
@@ -72,7 +108,36 @@ def create_summary_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list)
                     startcol=0,
                     index=False
                 )
-                start_row += len(freq_df) + 3
+
+                n_rows = len(freq_df)
+                # Build a chart for this variable
+                chart = workbook.add_chart({"type": "column"})
+                # Categories: response options (column 0)
+                # Values: counts (column 1)
+                cat_first_row = start_row + 2     # data starts after header row in Excel
+                cat_last_row = start_row + 1 + n_rows
+                cat_col_idx = 0                   # first column
+                count_col_idx = 1                 # second column
+
+                chart.add_series({
+                    "name": col,
+                    "categories": [sheet_name, cat_first_row, cat_col_idx, cat_last_row, cat_col_idx],
+                    "values": [sheet_name, cat_first_row, count_col_idx, cat_last_row, count_col_idx],
+                })
+                chart.set_title({"name": f"Distribution of {col}"})
+                chart.set_x_axis({"name": "Response"})
+                chart.set_y_axis({"name": "Count"})
+
+                # Insert chart to the right of the table
+                cat_ws.insert_chart(start_row, 4, chart)
+
+                # Move start_row down for next variable block
+                start_row = cat_last_row + 5
+
+        # Correlation matrix
+        if len(num_cols) >= 2:
+            corr = df_typed[num_cols].corr()
+            corr.to_excel(writer, sheet_name="Correlation_Matrix")
 
     buffer.seek(0)
     return buffer
@@ -89,53 +154,42 @@ if uploaded_file is not None:
     st.subheader("Data preview")
     st.dataframe(df.head())
 
-    # Reset column type state when a new file is uploaded
+    # Reset column type selections when a new file is uploaded
     if "uploaded_filename" not in st.session_state:
         st.session_state["uploaded_filename"] = None
+    if "column_types" not in st.session_state:
+        st.session_state["column_types"] = {}
 
     if st.session_state["uploaded_filename"] != filename:
-        # New file, clear previous column type selections
-        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("col_type_")]
-        for k in keys_to_delete:
-            del st.session_state[k]
         st.session_state["uploaded_filename"] = filename
+        st.session_state["column_types"] = {}
 
-    st.markdown("## Step 1: Review and confirm column types")
+    st.markdown("## Step 1: Manually select column types")
 
     type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
-    user_column_types = {}
+    user_column_types = st.session_state["column_types"]
 
-    # Column type selection with true persistence per column
-    for col in df.columns:
-        widget_key = f"col_type_{col}"
+    # You select the type for every column. No auto-detection.
+    for i, col in enumerate(df.columns):
+        if col not in user_column_types:
+            # Default everything to Text until you change it
+            user_column_types[col] = "Text"
 
-        # First time we see this column for this file, infer and store a default
-        if widget_key not in st.session_state:
-            if pd.api.types.is_numeric_dtype(df[col]):
-                inferred_type = "Numeric"
-            else:
-                unique_vals = df[col].nunique(dropna=True)
-                inferred_type = "Text" if unique_vals > 30 else "Categorical"
-            st.session_state[widget_key] = inferred_type
-
-        current_type = st.session_state[widget_key]
+        current_type = user_column_types[col]
         if current_type not in type_options:
             current_type = "Text"
 
-        default_index = type_options.index(current_type)
-
         selected_type = st.selectbox(
-            f"{col} (current: {current_type})",
+            f"Select type for: {col}",
             type_options,
-            index=default_index,
-            key=widget_key
+            index=type_options.index(current_type),
+            key=f"col_type_{i}"
         )
 
         user_column_types[col] = selected_type
 
     # Apply chosen types to a working copy of the dataframe
     df_typed = df.copy()
-
     for col, typ in user_column_types.items():
         if typ == "Numeric":
             df_typed[col] = pd.to_numeric(df_typed[col], errors="coerce")
@@ -270,81 +324,83 @@ if uploaded_file is not None:
             else:
                 st.info("Correlation requires at least two numeric columns.")
 
-    st.markdown("## Step 3: Statistical tests")
+    # Only run the rest if we have an uploaded file
+    if uploaded_file is not None:
+        st.markdown("## Step 3: Statistical tests")
 
-    cat_cols_all = [col for col, typ in user_column_types.items() if typ in ["Categorical", "Ordinal"]]
-    num_cols_all = [col for col, typ in user_column_types.items() if typ == "Numeric"]
+        cat_cols_all = [col for col, typ in user_column_types.items() if typ in ["Categorical", "Ordinal"]]
+        num_cols_all = [col for col, typ in user_column_types.items() if typ == "Numeric"]
 
-    # Chi square
-    if len(cat_cols_all) >= 2:
-        st.subheader("Chi square test")
-        chi1 = st.selectbox("Categorical variable 1", cat_cols_all, key="chi1")
-        chi2 = st.selectbox("Categorical variable 2", cat_cols_all, key="chi2")
-        if st.button("Run chi square"):
-            chi_table = pd.crosstab(df_typed[chi1], df_typed[chi2])
-            chi2_stat, p_val, _, _ = chi2_contingency(chi_table)
-            st.write(f"Chi square test p value: {p_val:.4f}")
-            if p_val < 0.05:
-                st.write("There is evidence of an association between the variables at the 5 percent level.")
-            else:
-                st.write("There is no strong evidence of an association between the variables at the 5 percent level.")
-            st.dataframe(chi_table)
-    else:
-        st.info("Chi square test needs at least two categorical or ordinal variables.")
-
-    # ANOVA
-    if len(cat_cols_all) >= 1 and len(num_cols_all) >= 1:
-        st.subheader("ANOVA")
-        group_col = st.selectbox("Group (categorical or ordinal)", cat_cols_all, key="anova_group")
-        value_col = st.selectbox("Value (numeric)", num_cols_all, key="anova_val")
-        if st.button("Run ANOVA"):
-            grouped = [
-                group[value_col].dropna()
-                for _, group in df_typed.groupby(group_col)
-            ]
-            if len(grouped) >= 2:
-                f_stat, p_val = f_oneway(*grouped)
-                st.write(f"ANOVA test p value: {p_val:.4f}")
+        # Chi square
+        if len(cat_cols_all) >= 2:
+            st.subheader("Chi square test")
+            chi1 = st.selectbox("Categorical variable 1", cat_cols_all, key="chi1")
+            chi2 = st.selectbox("Categorical variable 2", cat_cols_all, key="chi2")
+            if st.button("Run chi square"):
+                chi_table = pd.crosstab(df_typed[chi1], df_typed[chi2])
+                chi2_stat, p_val, _, _ = chi2_contingency(chi_table)
+                st.write(f"Chi square test p value: {p_val:.4f}")
                 if p_val < 0.05:
-                    st.write("There is evidence of a difference in means across groups at the 5 percent level.")
+                    st.write("There is evidence of an association between the variables at the 5 percent level.")
                 else:
-                    st.write("There is no strong evidence of a difference in means across groups at the 5 percent level.")
-            else:
-                st.info("ANOVA requires at least two groups.")
-    else:
-        st.info("ANOVA needs at least one categorical or ordinal variable and one numeric variable.")
+                    st.write("There is no strong evidence of an association between the variables at the 5 percent level.")
+                st.dataframe(chi_table)
+        else:
+            st.info("Chi square test needs at least two categorical or ordinal variables.")
 
-    # Regression
-    if len(num_cols_all) >= 2:
-        st.subheader("Linear regression")
-        y = st.selectbox("Dependent variable (numeric)", num_cols_all, key="reg_y")
-        x = st.selectbox("Independent variable", df_typed.columns, key="reg_x")
-        if st.button("Run regression"):
-            x_type = user_column_types.get(x, "Numeric")
+        # ANOVA
+        if len(cat_cols_all) >= 1 and len(num_cols_all) >= 1:
+            st.subheader("ANOVA")
+            group_col = st.selectbox("Group (categorical or ordinal)", cat_cols_all, key="anova_group")
+            value_col = st.selectbox("Value (numeric)", num_cols_all, key="anova_val")
+            if st.button("Run ANOVA"):
+                grouped = [
+                    group[value_col].dropna()
+                    for _, group in df_typed.groupby(group_col)
+                ]
+                if len(grouped) >= 2:
+                    f_stat, p_val = f_oneway(*grouped)
+                    st.write(f"ANOVA test p value: {p_val:.4f}")
+                    if p_val < 0.05:
+                        st.write("There is evidence of a difference in means across groups at the 5 percent level.")
+                    else:
+                        st.write("There is no strong evidence of a difference in means across groups at the 5 percent level.")
+                else:
+                    st.info("ANOVA requires at least two groups.")
+        else:
+            st.info("ANOVA needs at least one categorical or ordinal variable and one numeric variable.")
 
-            y_term = quote_col(y)
-            if x_type in ["Categorical", "Text", "Ordinal"]:
-                x_term = f"C({quote_col(x)})"
-            else:
-                x_term = quote_col(x)
+        # Regression
+        if len(num_cols_all) >= 2:
+            st.subheader("Linear regression")
+            y = st.selectbox("Dependent variable (numeric)", num_cols_all, key="reg_y")
+            x = st.selectbox("Independent variable", df_typed.columns, key="reg_x")
+            if st.button("Run regression"):
+                x_type = user_column_types.get(x, "Numeric")
 
-            formula = f"{y_term} ~ {x_term}"
+                y_term = quote_col(y)
+                if x_type in ["Categorical", "Text", "Ordinal"]:
+                    x_term = f"C({quote_col(x)})"
+                else:
+                    x_term = quote_col(x)
 
-            try:
-                model = smf.ols(formula=formula, data=df_typed).fit()
-                st.text(model.summary())
-            except Exception as e:
-                st.error(f"Regression failed: {e}")
-    else:
-        st.info("Linear regression needs at least two numeric variables.")
+                formula = f"{y_term} ~ {x_term}"
 
-    st.markdown("## Step 4: Export summaries to Excel")
+                try:
+                    model = smf.ols(formula=formula, data=df_typed).fit()
+                    st.text(model.summary())
+                except Exception as e:
+                    st.error(f"Regression failed: {e}")
+        else:
+            st.info("Linear regression needs at least two numeric variables.")
 
-    if st.button("Generate Excel summary"):
-        buffer = create_summary_excel(df_typed, num_cols_all, cat_cols_all)
-        st.download_button(
-            label="Download Excel summary",
-            data=buffer,
-            file_name="evaluation_summary.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        st.markdown("## Step 4: Download Excel report (tables + charts)")
+
+        if st.button("Generate Excel report"):
+            buffer = create_report_excel(df_typed, num_cols_all, cat_cols_all)
+            st.download_button(
+                label="Download Excel report",
+                data=buffer,
+                file_name="evaluation_report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
