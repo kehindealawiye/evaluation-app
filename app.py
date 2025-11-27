@@ -89,59 +89,49 @@ if uploaded_file is not None:
     st.subheader("Data preview")
     st.dataframe(df.head())
 
-    # Initialise or reset column type state when file changes or structure changes
-    cols = list(df.columns)
-
+    # Reset column type state when a new file is uploaded
     if "uploaded_filename" not in st.session_state:
         st.session_state["uploaded_filename"] = None
-    if "col_types" not in st.session_state:
-        st.session_state["col_types"] = []
-    if "col_names" not in st.session_state:
-        st.session_state["col_names"] = []
 
-    # If new file or different column structure, re-infer types
-    if (
-        st.session_state["uploaded_filename"] != filename
-        or len(st.session_state["col_names"]) != len(cols)
-        or list(st.session_state["col_names"]) != cols
-    ):
-        inferred_types = []
-        for col in cols:
+    if st.session_state["uploaded_filename"] != filename:
+        # New file, clear previous column type selections
+        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("col_type_")]
+        for k in keys_to_delete:
+            del st.session_state[k]
+        st.session_state["uploaded_filename"] = filename
+
+    st.markdown("## Step 1: Review and confirm column types")
+
+    type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
+    user_column_types = {}
+
+    # Column type selection with true persistence per column
+    for col in df.columns:
+        widget_key = f"col_type_{col}"
+
+        # First time we see this column for this file, infer and store a default
+        if widget_key not in st.session_state:
             if pd.api.types.is_numeric_dtype(df[col]):
                 inferred_type = "Numeric"
             else:
                 unique_vals = df[col].nunique(dropna=True)
                 inferred_type = "Text" if unique_vals > 30 else "Categorical"
-            inferred_types.append(inferred_type)
+            st.session_state[widget_key] = inferred_type
 
-        st.session_state["uploaded_filename"] = filename
-        st.session_state["col_names"] = cols
-        st.session_state["col_types"] = inferred_types
-
-    st.markdown("## Step 1: Review and confirm column types")
-
-    type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
-
-    col_types = st.session_state["col_types"]
-
-    # Column type selection with persistence
-    for i, col in enumerate(cols):
-        current_type = col_types[i]
-        # Ensure current_type is valid
+        current_type = st.session_state[widget_key]
         if current_type not in type_options:
             current_type = "Text"
 
+        default_index = type_options.index(current_type)
+
         selected_type = st.selectbox(
-            f"{col} (detected: {current_type})",
+            f"{col} (current: {current_type})",
             type_options,
-            index=type_options.index(current_type),
-            key=f"col_type_{i}"
+            index=default_index,
+            key=widget_key
         )
 
-        col_types[i] = selected_type
-
-    # Build a mapping from column name to selected type
-    user_column_types = {col: col_types[i] for i, col in enumerate(cols)}
+        user_column_types[col] = selected_type
 
     # Apply chosen types to a working copy of the dataframe
     df_typed = df.copy()
@@ -168,7 +158,7 @@ if uploaded_file is not None:
             selected_column = st.selectbox("Select a column to explore", df_typed.columns)
             col_type = user_column_types.get(selected_column, "Text")
 
-            if col_type == "Categorical" or col_type == "Ordinal":
+            if col_type in ["Categorical", "Ordinal"]:
                 value_counts = df_typed[selected_column].value_counts(dropna=False).reset_index()
                 value_counts.columns = [selected_column, "Count"]
                 value_counts["Percent"] = (value_counts["Count"] / value_counts["Count"].sum() * 100).round(2)
@@ -266,9 +256,9 @@ if uploaded_file is not None:
         # Correlation matrix
         with tab_corr:
             st.subheader("Correlation matrix for numeric columns")
-            num_cols = [col for col, typ in user_column_types.items() if typ == "Numeric"]
-            if len(num_cols) >= 2:
-                corr = df_typed[num_cols].corr()
+            num_cols_corr = [col for col, typ in user_column_types.items() if typ == "Numeric"]
+            if len(num_cols_corr) >= 2:
+                corr = df_typed[num_cols_corr].corr()
                 fig = px.imshow(
                     corr,
                     text_auto=True,
