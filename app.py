@@ -46,12 +46,11 @@ def build_categorical_summary(df_cat: pd.DataFrame, cat_cols: list) -> dict:
 
 def create_report_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) -> BytesIO:
     """
-    Create an Excel report with:
-    - Numeric descriptive statistics (and a chart of means)
-    - Categorical/ordinal frequency tables (each with a bar chart)
+    Excel report with:
+    - Numeric descriptive statistics (+ chart of means)
+    - Categorical/ordinal frequency tables (+ bar charts)
     - Correlation matrix (if available)
-    No raw row-level dataset is exported.
-    Charts are created with XlsxWriter on the summary tables.
+    No raw row-level dataset.
     """
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
@@ -64,32 +63,29 @@ def create_report_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) 
             desc.to_excel(writer, sheet_name=sheet_name)
             numeric_ws = writer.sheets[sheet_name]
 
-            # Add a chart for the mean of each numeric variable
             if "mean" in desc.columns:
                 chart = workbook.add_chart({"type": "column"})
                 n_rows = len(desc.index)
 
-                # desc is written starting at row 0, col 0 (index + columns)
-                # Categories (variable names) are in column 0, rows 1..n_rows
                 cat_first_row = 1
                 cat_last_row = n_rows
-                cat_col_idx = 0
-
-                mean_col_idx = list(desc.columns).index("mean") + 1  # +1 for index column
+                cat_col_idx = 0  # variable names
+                mean_col_idx = list(desc.columns).index("mean") + 1  # +1 for index col
 
                 chart.add_series({
                     "name": "Mean values",
-                    "categories": [sheet_name, cat_first_row, cat_col_idx, cat_last_row, cat_col_idx],
-                    "values": [sheet_name, cat_first_row, mean_col_idx, cat_last_row, mean_col_idx],
+                    "categories": [sheet_name, cat_first_row, cat_col_idx,
+                                   cat_last_row, cat_col_idx],
+                    "values": [sheet_name, cat_first_row, mean_col_idx,
+                               cat_last_row, mean_col_idx],
                 })
                 chart.set_title({"name": "Mean of numeric variables"})
                 chart.set_x_axis({"name": "Variable"})
                 chart.set_y_axis({"name": "Mean"})
 
-                # Insert chart below the table
                 numeric_ws.insert_chart(cat_last_row + 3, 0, chart)
 
-        # Categorical frequencies with charts
+        # Categorical/ordinal frequencies with charts
         if cat_cols:
             cat_summaries = build_categorical_summary(df_typed, cat_cols)
             sheet_name = "Categorical_Frequencies"
@@ -98,9 +94,7 @@ def create_report_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) 
 
             start_row = 0
             for col, freq_df in cat_summaries.items():
-                # Write column title
                 cat_ws.write(start_row, 0, col)
-                # Write table just below
                 freq_df.to_excel(
                     writer,
                     sheet_name=sheet_name,
@@ -110,28 +104,26 @@ def create_report_excel(df_typed: pd.DataFrame, num_cols: list, cat_cols: list) 
                 )
 
                 n_rows = len(freq_df)
-                # Build a chart for this variable
                 chart = workbook.add_chart({"type": "column"})
-                # Categories: response options (column 0)
-                # Values: counts (column 1)
-                cat_first_row = start_row + 2     # data starts after header row in Excel
+
+                cat_first_row = start_row + 2
                 cat_last_row = start_row + 1 + n_rows
-                cat_col_idx = 0                   # first column
-                count_col_idx = 1                 # second column
+                cat_col_idx = 0
+                count_col_idx = 1
 
                 chart.add_series({
                     "name": col,
-                    "categories": [sheet_name, cat_first_row, cat_col_idx, cat_last_row, cat_col_idx],
-                    "values": [sheet_name, cat_first_row, count_col_idx, cat_last_row, count_col_idx],
+                    "categories": [sheet_name, cat_first_row, cat_col_idx,
+                                   cat_last_row, cat_col_idx],
+                    "values": [sheet_name, cat_first_row, count_col_idx,
+                               cat_last_row, count_col_idx],
                 })
                 chart.set_title({"name": f"Distribution of {col}"})
                 chart.set_x_axis({"name": "Response"})
                 chart.set_y_axis({"name": "Count"})
 
-                # Insert chart to the right of the table
                 cat_ws.insert_chart(start_row, 4, chart)
 
-                # Move start_row down for next variable block
                 start_row = cat_last_row + 5
 
         # Correlation matrix
@@ -154,47 +146,52 @@ if uploaded_file is not None:
     st.subheader("Data preview")
     st.dataframe(df.head())
 
-    # Reset column type selections when a new file is uploaded
-    if "uploaded_filename" not in st.session_state:
-        st.session_state["uploaded_filename"] = None
-    if "column_types" not in st.session_state:
-        st.session_state["column_types"] = {}
+    # Reset type map when a new file is uploaded
+    if "filename" not in st.session_state:
+        st.session_state["filename"] = None
+    if "type_map" not in st.session_state:
+        st.session_state["type_map"] = {}
 
-    if st.session_state["uploaded_filename"] != filename:
-        st.session_state["uploaded_filename"] = filename
-        st.session_state["column_types"] = {}
+    if st.session_state["filename"] != filename:
+        st.session_state["filename"] = filename
+        st.session_state["type_map"] = {}
 
-    st.markdown("## Step 1: Manually select column types")
+    type_map = st.session_state["type_map"]
 
-    type_options = ["Numeric", "Categorical", "Text", "Ordinal"]
-    user_column_types = st.session_state["column_types"]
-
-    # You select the type for every column. No auto-detection.
-    for i, col in enumerate(df.columns):
-        if col not in user_column_types:
-            # Default everything to Text until you change it
-            user_column_types[col] = "Text"
-
-        current_type = user_column_types[col]
-        if current_type not in type_options:
-            current_type = "Text"
-
-        selected_type = st.selectbox(
-            f"Select type for: {col}",
-            type_options,
-            index=type_options.index(current_type),
-            key=f"col_type_{i}"
+    # Optional: show raw pandas dtypes just for your information
+    with st.expander("View raw detected dtypes (for info only)"):
+        dtypes_df = pd.DataFrame(
+            {"Variable": df.columns, "Detected dtype": df.dtypes.astype(str)}
         )
+        st.dataframe(dtypes_df)
 
-        user_column_types[col] = selected_type
+    st.markdown("## Manually Set Variable Types")
 
-    # Apply chosen types to a working copy of the dataframe
+    type_options = ["Numeric", "Categorical", "Text", "Ordinal", "Datetime"]
+
+    # Manual type selection for every column (no auto-detection logic)
+    for i, col in enumerate(df.columns):
+        current = type_map.get(col, "Text")
+        if current not in type_options:
+            current = "Text"
+
+        selected = st.selectbox(
+            f"Select type for {col}",
+            type_options,
+            index=type_options.index(current),
+            key=f"type_{i}"
+        )
+        type_map[col] = selected
+
+    # Build typed dataframe
     df_typed = df.copy()
-    for col, typ in user_column_types.items():
+    for col, typ in type_map.items():
         if typ == "Numeric":
             df_typed[col] = pd.to_numeric(df_typed[col], errors="coerce")
         elif typ in ["Categorical", "Ordinal"]:
             df_typed[col] = df_typed[col].astype("category")
+        elif typ == "Datetime":
+            df_typed[col] = pd.to_datetime(df_typed[col], errors="coerce")
         # Text left as-is
 
     st.markdown("## Step 2: Explore your data")
@@ -210,12 +207,13 @@ if uploaded_file is not None:
         with tab_univariate:
             st.subheader("Univariate explorer")
             selected_column = st.selectbox("Select a column to explore", df_typed.columns)
-            col_type = user_column_types.get(selected_column, "Text")
+            col_type = type_map.get(selected_column, "Text")
 
             if col_type in ["Categorical", "Ordinal"]:
                 value_counts = df_typed[selected_column].value_counts(dropna=False).reset_index()
                 value_counts.columns = [selected_column, "Count"]
-                value_counts["Percent"] = (value_counts["Count"] / value_counts["Count"].sum() * 100).round(2)
+                value_counts["Percent"] = (value_counts["Count"] /
+                                           value_counts["Count"].sum() * 100).round(2)
                 fig = px.bar(
                     value_counts,
                     x=selected_column,
@@ -250,7 +248,7 @@ if uploaded_file is not None:
                         height=400,
                         background_color="white"
                     ).generate(text)
-                    st.image(wordcloud.to_array(), use_column_width=True)
+                    st.image(wordcloud.to_array(), use_container_width=True)
                 else:
                     st.info("No text available to generate a word cloud.")
 
@@ -258,7 +256,7 @@ if uploaded_file is not None:
                     if text.strip():
                         words = nltk.word_tokenize(text.lower())
                         stop_words = set(stopwords.words("english"))
-                        words = [word for word in words if word.isalpha() and word not in stop_words]
+                        words = [w for w in words if w.isalpha() and w not in stop_words]
                         most_common = Counter(words).most_common(10)
                         keywords = ", ".join([w for w, _ in most_common])
 
@@ -283,7 +281,7 @@ if uploaded_file is not None:
         # Descriptive statistics
         with tab_desc:
             st.subheader("Descriptive statistics for numeric columns")
-            num_cols = [col for col, typ in user_column_types.items() if typ == "Numeric"]
+            num_cols = [col for col, typ in type_map.items() if typ == "Numeric"]
             if num_cols:
                 desc = df_typed[num_cols].describe().T
                 st.dataframe(desc)
@@ -293,7 +291,7 @@ if uploaded_file is not None:
         # Frequency tables
         with tab_freq:
             st.subheader("Frequency tables for categorical and ordinal columns")
-            cat_cols = [col for col, typ in user_column_types.items() if typ in ["Categorical", "Ordinal"]]
+            cat_cols = [col for col, typ in type_map.items() if typ in ["Categorical", "Ordinal"]]
             if cat_cols:
                 freq_col = st.selectbox("Select a column", cat_cols, key="freq_col")
                 vc = df_typed[freq_col].value_counts(dropna=False)
@@ -310,7 +308,7 @@ if uploaded_file is not None:
         # Correlation matrix
         with tab_corr:
             st.subheader("Correlation matrix for numeric columns")
-            num_cols_corr = [col for col, typ in user_column_types.items() if typ == "Numeric"]
+            num_cols_corr = [col for col, typ in type_map.items() if typ == "Numeric"]
             if len(num_cols_corr) >= 2:
                 corr = df_typed[num_cols_corr].corr()
                 fig = px.imshow(
@@ -324,12 +322,12 @@ if uploaded_file is not None:
             else:
                 st.info("Correlation requires at least two numeric columns.")
 
-    # Only run the rest if we have an uploaded file
+    # Only run tests and export if we have a file
     if uploaded_file is not None:
         st.markdown("## Step 3: Statistical tests")
 
-        cat_cols_all = [col for col, typ in user_column_types.items() if typ in ["Categorical", "Ordinal"]]
-        num_cols_all = [col for col, typ in user_column_types.items() if typ == "Numeric"]
+        cat_cols_all = [col for col, typ in type_map.items() if typ in ["Categorical", "Ordinal"]]
+        num_cols_all = [col for col, typ in type_map.items() if typ == "Numeric"]
 
         # Chi square
         if len(cat_cols_all) >= 2:
@@ -340,10 +338,6 @@ if uploaded_file is not None:
                 chi_table = pd.crosstab(df_typed[chi1], df_typed[chi2])
                 chi2_stat, p_val, _, _ = chi2_contingency(chi_table)
                 st.write(f"Chi square test p value: {p_val:.4f}")
-                if p_val < 0.05:
-                    st.write("There is evidence of an association between the variables at the 5 percent level.")
-                else:
-                    st.write("There is no strong evidence of an association between the variables at the 5 percent level.")
                 st.dataframe(chi_table)
         else:
             st.info("Chi square test needs at least two categorical or ordinal variables.")
@@ -361,14 +355,10 @@ if uploaded_file is not None:
                 if len(grouped) >= 2:
                     f_stat, p_val = f_oneway(*grouped)
                     st.write(f"ANOVA test p value: {p_val:.4f}")
-                    if p_val < 0.05:
-                        st.write("There is evidence of a difference in means across groups at the 5 percent level.")
-                    else:
-                        st.write("There is no strong evidence of a difference in means across groups at the 5 percent level.")
                 else:
                     st.info("ANOVA requires at least two groups.")
         else:
-            st.info("ANOVA needs at least one categorical or ordinal variable and one numeric variable.")
+            st.info("ANOVA needs at least one categorical/ordinal and one numeric variable.")
 
         # Regression
         if len(num_cols_all) >= 2:
@@ -376,7 +366,7 @@ if uploaded_file is not None:
             y = st.selectbox("Dependent variable (numeric)", num_cols_all, key="reg_y")
             x = st.selectbox("Independent variable", df_typed.columns, key="reg_x")
             if st.button("Run regression"):
-                x_type = user_column_types.get(x, "Numeric")
+                x_type = type_map.get(x, "Numeric")
 
                 y_term = quote_col(y)
                 if x_type in ["Categorical", "Text", "Ordinal"]:
@@ -385,7 +375,6 @@ if uploaded_file is not None:
                     x_term = quote_col(x)
 
                 formula = f"{y_term} ~ {x_term}"
-
                 try:
                     model = smf.ols(formula=formula, data=df_typed).fit()
                     st.text(model.summary())
